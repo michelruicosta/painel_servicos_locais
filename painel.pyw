@@ -31,6 +31,13 @@ except Exception:
 import tkinter as tk
 from tkinter import ttk, messagebox
 
+try:
+    import pystray
+    from PIL import Image, ImageDraw
+    TRAY_DISPONIVEL = True
+except ImportError:
+    TRAY_DISPONIVEL = False
+
 CREATE_NO_WINDOW = 0x08000000
 CREATE_NEW_PROCESS_GROUP = 0x00000200
 ERROR_ALREADY_EXISTS = 183
@@ -51,6 +58,22 @@ COR_PARADO = "#ef5350"
 COR_ESPERA = "#ff9800"
 COR_LIGAR = "#2e7d32"
 COR_DESLIGAR = "#c62828"
+COR_UPTIME = "#3a7a3a"
+
+COR_BADGE = {
+    "no_ar":      ("#0d2e0f", "#66bb6a"),
+    "parcial":    ("#2e1e08", "#ffb74d"),
+    "ligando":    ("#2e1e08", "#ffb74d"),
+    "desligando": ("#2e1e08", "#ffb74d"),
+    "parado":     ("#2e1010", "#ef5350"),
+}
+TEXTO_BADGE = {
+    "no_ar":      "● No ar",
+    "parcial":    "● Parcial",
+    "ligando":    "● Ligando…",
+    "desligando": "● Saindo…",
+    "parado":     "● Parado",
+}
 
 
 def python_do_projeto(raiz: Path) -> str:
@@ -292,7 +315,6 @@ def catalogo() -> list[Servico]:
             ],
             abrir=[("Abrir", "http://127.0.0.1:8007/"), ("API", "http://127.0.0.1:8007/docs")],
         ),
-        # HTML estático + API do assistente (MVP). Mesmo Ligar/Desligar dos demais.
         Servico(
             id="site",
             nome="Site institucional",
@@ -466,6 +488,14 @@ def ja_existe_outra_janela() -> bool:
     return False
 
 
+def _formatar_uptime(segundos: int) -> str:
+    h, r = divmod(segundos, 3600)
+    m, _ = divmod(r, 60)
+    if h:
+        return f"↑ {h}h {m}m"
+    return f"↑ {m}m"
+
+
 class LinhaServico(tk.Frame):
     def __init__(
         self, pai: tk.Widget, servico: Servico, ao_ligar, ao_desligar, estado_de
@@ -480,22 +510,32 @@ class LinhaServico(tk.Frame):
         self._estado_de = estado_de
         self.ocupado = False
 
-        # Uma linha: status + nome | Ligar/Desligar + Abrir + Log
         linha = tk.Frame(self, bg=COR_CARD)
         linha.pack(fill="x")
-        self.ponto = tk.Canvas(
-            linha, width=14, height=14, highlightthickness=0, bg=COR_CARD, bd=0
+
+        # Badge de status (substitui o ponto isolado)
+        bg_badge, fg_badge = COR_BADGE["parado"]
+        self.badge = tk.Label(
+            linha,
+            text=TEXTO_BADGE["parado"],
+            bg=bg_badge,
+            fg=fg_badge,
+            font=("Segoe UI", 8),
+            padx=7,
+            pady=3,
+            bd=0,
+            width=10,
+            anchor="center",
         )
-        self.ponto.pack(side="left", pady=(2, 0))
-        self._oval = self.ponto.create_oval(2, 2, 12, 12, fill=COR_PARADO, outline="")
+        self.badge.pack(side="left", pady=(2, 0))
 
         textos = tk.Frame(linha, bg=COR_CARD)
-        textos.pack(side="left", fill="x", expand=True, padx=(8, 8))
+        textos.pack(side="left", fill="x", expand=True, padx=(10, 8))
         ttk.Label(textos, text=servico.nome, style="Nome.TLabel").pack(anchor="w")
-        self.lbl_detalhe = ttk.Label(
-            textos, text=servico.detalhe, style="Detalhe.TLabel"
-        )
+        self.lbl_detalhe = ttk.Label(textos, text=servico.detalhe, style="Detalhe.TLabel")
         self.lbl_detalhe.pack(anchor="w")
+        self.lbl_uptime = ttk.Label(textos, text="", style="Uptime.TLabel")
+        self.lbl_uptime.pack(anchor="w")
 
         botoes = tk.Frame(linha, bg=COR_CARD)
         botoes.pack(side="right")
@@ -558,38 +598,20 @@ class LinhaServico(tk.Frame):
 
     def _pintar_botao(self, estado: str) -> None:
         if estado == "parado":
-            self.btn_liga.configure(
-                text="Ligar",
-                bg=COR_LIGAR,
-                activebackground="#1b5e20",
-            )
+            self.btn_liga.configure(text="Ligar", bg=COR_LIGAR, activebackground="#1b5e20")
         else:
-            self.btn_liga.configure(
-                text="Desligar",
-                bg=COR_DESLIGAR,
-                activebackground="#b71c1c",
-            )
+            self.btn_liga.configure(text="Desligar", bg=COR_DESLIGAR, activebackground="#b71c1c")
 
-    def atualizar(self, estado: str, ocupado: bool) -> None:
+    def atualizar(self, estado: str, ocupado: bool, uptime: str = "") -> None:
         self.ocupado = ocupado
-        cores = {
-            "no_ar": COR_NO_AR,
-            "parcial": COR_ESPERA,
-            "ligando": COR_ESPERA,
-            "desligando": COR_ESPERA,
-            "parado": COR_PARADO,
-        }
-        textos = {
-            "no_ar": "No ar",
-            "parcial": "Parcial",
-            "ligando": "Ligando…",
-            "desligando": "Desligando…",
-            "parado": "Parado",
-        }
-        self.ponto.itemconfigure(self._oval, fill=cores.get(estado, COR_PARADO))
-        self.lbl_detalhe.configure(
-            text=f"{self.servico.detalhe} · {textos.get(estado, estado)}"
+        bg_badge, fg_badge = COR_BADGE.get(estado, COR_BADGE["parado"])
+        self.badge.configure(
+            text=TEXTO_BADGE.get(estado, "● —"),
+            bg=bg_badge,
+            fg=fg_badge,
         )
+        self.lbl_detalhe.configure(text=self.servico.detalhe)
+        self.lbl_uptime.configure(text=uptime)
         self.btn_liga.configure(state="disabled" if ocupado else "normal")
         if not ocupado:
             self._pintar_botao("parado" if estado == "parado" else "no_ar")
@@ -604,7 +626,9 @@ class Painel(tk.Tk):
         self.acoes: dict[str, str] = {}
         self.estados: dict[str, str] = {s.id: "parado" for s in servicos}
         self.inicio_acao: dict[str, float] = {}
+        self.inicio_no_ar: dict[str, float] = {}
         self._fila: queue.Queue = queue.Queue()
+        self._icone_tray: "pystray.Icon | None" = None
         self.title(TITULO)
         self.configure(bg=COR_FUNDO)
         self.minsize(460, 520)
@@ -613,7 +637,11 @@ class Painel(tk.Tk):
         self._posicionar()
         threading.Thread(target=self._trabalhador, daemon=True).start()
         threading.Thread(target=self._observar, daemon=True).start()
-        self.protocol("WM_DELETE_WINDOW", self.destroy)
+        if TRAY_DISPONIVEL:
+            self.protocol("WM_DELETE_WINDOW", self._minimizar_para_tray)
+            self._criar_tray()
+        else:
+            self.protocol("WM_DELETE_WINDOW", self.destroy)
 
     def _estilos(self) -> None:
         style = ttk.Style(self)
@@ -623,96 +651,52 @@ class Painel(tk.Tk):
             pass
         style.configure("Fundo.TFrame", background=COR_FUNDO)
         style.configure("Card.TFrame", background=COR_CARD)
-        style.configure(
-            "Titulo.TLabel",
-            background=COR_FUNDO,
-            foreground=COR_TEXTO,
-            font=("Segoe UI Semibold", 14),
-        )
-        style.configure(
-            "Sub.TLabel",
-            background=COR_FUNDO,
-            foreground=COR_SUAVE,
-            font=("Segoe UI", 9),
-        )
-        style.configure(
-            "Nome.TLabel",
-            background=COR_CARD,
-            foreground=COR_TEXTO,
-            font=("Segoe UI Semibold", 11),
-        )
-        style.configure(
-            "Detalhe.TLabel",
-            background=COR_CARD,
-            foreground=COR_SUAVE,
-            font=("Segoe UI", 9),
-        )
-        style.configure(
-            "Rodape.TLabel",
-            background=COR_FUNDO,
-            foreground=COR_SUAVE,
-            font=("Segoe UI", 8),
-        )
+        style.configure("Titulo.TLabel", background=COR_FUNDO, foreground=COR_TEXTO, font=("Segoe UI Semibold", 14))
+        style.configure("Sub.TLabel", background=COR_FUNDO, foreground=COR_SUAVE, font=("Segoe UI", 9))
+        style.configure("Nome.TLabel", background=COR_CARD, foreground=COR_TEXTO, font=("Segoe UI Semibold", 11))
+        style.configure("Detalhe.TLabel", background=COR_CARD, foreground=COR_SUAVE, font=("Segoe UI", 9))
+        style.configure("Uptime.TLabel", background=COR_CARD, foreground=COR_UPTIME, font=("Segoe UI", 8))
+        style.configure("Rodape.TLabel", background=COR_FUNDO, foreground=COR_SUAVE, font=("Segoe UI", 8))
 
     def _montar(self) -> None:
         capa = ttk.Frame(self, style="Fundo.TFrame", padding=(16, 14, 16, 8))
         capa.pack(fill="x")
         ttk.Label(capa, text="Serviços locais", style="Titulo.TLabel").pack(anchor="w")
-        ttk.Label(
-            capa,
-            text="Liga a tela e a API de cada sistema neste PC.",
-            style="Sub.TLabel",
-        ).pack(anchor="w", pady=(2, 10))
+        self.lbl_resumo = ttk.Label(capa, text="verificando…", style="Sub.TLabel")
+        self.lbl_resumo.pack(anchor="w", pady=(2, 10))
 
         acoes = ttk.Frame(capa, style="Fundo.TFrame")
         acoes.pack(fill="x")
         tk.Button(
-            acoes,
-            text="Ligar todos",
-            command=self._ligar_todos,
-            bd=0,
-            padx=14,
-            pady=6,
-            font=("Segoe UI", 9),
-            cursor="hand2",
-            bg=COR_LIGAR,
-            fg="white",
-            activebackground="#1b5e20",
-            activeforeground="white",
+            acoes, text="Ligar todos", command=self._ligar_todos,
+            bd=0, padx=14, pady=6, font=("Segoe UI", 9), cursor="hand2",
+            bg=COR_LIGAR, fg="white", activebackground="#1b5e20", activeforeground="white",
         ).pack(side="left")
         tk.Button(
-            acoes,
-            text="Desligar todos",
-            command=self._desligar_todos,
-            bd=0,
-            padx=14,
-            pady=6,
-            font=("Segoe UI", 9),
-            cursor="hand2",
-            bg=COR_DESLIGAR,
-            fg="white",
-            activebackground="#b71c1c",
-            activeforeground="white",
+            acoes, text="Desligar todos", command=self._desligar_todos,
+            bd=0, padx=14, pady=6, font=("Segoe UI", 9), cursor="hand2",
+            bg=COR_DESLIGAR, fg="white", activebackground="#b71c1c", activeforeground="white",
         ).pack(side="left", padx=(8, 0))
+        if TRAY_DISPONIVEL:
+            tk.Button(
+                acoes, text="↙ Bandeja", command=self._minimizar_para_tray,
+                bd=1, relief="solid", padx=10, pady=5, font=("Segoe UI", 9), cursor="hand2",
+                bg=COR_FUNDO, fg=COR_SUAVE, activebackground="#2a2a2a", highlightthickness=0,
+            ).pack(side="right")
 
         lista = ttk.Frame(self, style="Fundo.TFrame", padding=(16, 4, 16, 8))
         lista.pack(fill="both", expand=True)
         for servico in self.servicos:
             linha = LinhaServico(
-                lista,
-                servico,
-                self._enfileirar_ligar,
-                self._enfileirar_desligar,
-                self._estado_cache,
+                lista, servico,
+                self._enfileirar_ligar, self._enfileirar_desligar, self._estado_cache,
             )
             self.linhas[servico.id] = linha
 
-        ttk.Label(
-            self,
-            text="Só neste computador. Não mexe no site no ar.",
-            style="Rodape.TLabel",
-            padding=(16, 0, 16, 12),
-        ).pack(anchor="w")
+        rodape_txt = "Só neste computador · não mexe no site no ar"
+        if TRAY_DISPONIVEL:
+            rodape_txt += " · fechar minimiza para a bandeja"
+        ttk.Label(self, text=rodape_txt, style="Rodape.TLabel", padding=(16, 0, 16, 12)).pack(anchor="w")
 
     def _posicionar(self) -> None:
         self.update_idletasks()
@@ -757,9 +741,7 @@ class Painel(tk.Tk):
     def _trabalhador(self) -> None:
         while True:
             acao, servico = self._fila.get()
-            threading.Thread(
-                target=self._executar, args=(acao, servico), daemon=True
-            ).start()
+            threading.Thread(target=self._executar, args=(acao, servico), daemon=True).start()
 
     def _executar(self, acao: str, servico: Servico) -> None:
         erro = None
@@ -793,15 +775,28 @@ class Painel(tk.Tk):
             time.sleep(0.6)
 
     def _aplicar_estados(self, novos: dict[str, str]) -> None:
-        self.estados = novos
         agora = time.time()
+        for sid, novo_estado in novos.items():
+            prev = self.estados.get(sid, "parado")
+            if novo_estado == "no_ar" and prev != "no_ar":
+                self.inicio_no_ar[sid] = agora
+            elif novo_estado != "no_ar" and prev == "no_ar":
+                self.inicio_no_ar.pop(sid, None)
+
+        self.estados = novos
+
+        no_ar = sum(1 for s in self.servicos if novos.get(s.id) == "no_ar")
+        total = len(self.servicos)
+        self.lbl_resumo.configure(text=f"{no_ar} de {total} no ar · este PC")
+
+        agora2 = time.time()
         for servico in self.servicos:
             sid = servico.id
             if sid not in self.ocupados:
                 continue
             acao = self.acoes.get(sid)
             atual = novos.get(sid)
-            estourou = agora - self.inicio_acao.get(sid, agora) > 50
+            estourou = agora2 - self.inicio_acao.get(sid, agora2) > 50
             if acao == "ligar" and (atual == "no_ar" or estourou):
                 self.ocupados.discard(sid)
                 self.acoes.pop(sid, None)
@@ -813,15 +808,67 @@ class Painel(tk.Tk):
         self._pintar_linhas()
 
     def _pintar_linhas(self) -> None:
+        agora = time.time()
         for servico in self.servicos:
             estado = self.estados.get(servico.id, "parado")
             ocupado = servico.id in self.ocupados
             visivel = estado
             if ocupado:
-                visivel = (
-                    "ligando" if self.acoes.get(servico.id) == "ligar" else "desligando"
-                )
-            self.linhas[servico.id].atualizar(visivel, ocupado)
+                visivel = "ligando" if self.acoes.get(servico.id) == "ligar" else "desligando"
+
+            uptime = ""
+            if estado == "no_ar" and servico.id in self.inicio_no_ar:
+                elapsed = int(agora - self.inicio_no_ar[servico.id])
+                uptime = _formatar_uptime(elapsed)
+
+            self.linhas[servico.id].atualizar(visivel, ocupado, uptime)
+
+    # ── System tray ──────────────────────────────────────────────────────────
+
+    def _icone_imagem(self) -> "Image.Image":
+        no_ar = sum(1 for s in self.servicos if self.estados.get(s.id) == "no_ar")
+        total = len(self.servicos)
+        cor = "#4caf50" if no_ar == total else "#ff9800" if no_ar > 0 else "#ef5350"
+        img = Image.new("RGBA", (64, 64), (0, 0, 0, 0))
+        d = ImageDraw.Draw(img)
+        d.ellipse([8, 8, 56, 56], fill=cor)
+        return img
+
+    def _criar_tray(self) -> None:
+        menu = pystray.Menu(
+            pystray.MenuItem("Abrir painel", self._mostrar_janela, default=True),
+            pystray.Menu.SEPARATOR,
+            pystray.MenuItem("Ligar todos", lambda icon, item: self.after(0, self._ligar_todos)),
+            pystray.MenuItem("Desligar todos", lambda icon, item: self.after(0, self._desligar_todos)),
+            pystray.Menu.SEPARATOR,
+            pystray.MenuItem("Sair", self._sair_do_tray),
+        )
+        self._icone_tray = pystray.Icon(
+            "finaud",
+            self._icone_imagem(),
+            TITULO,
+            menu,
+        )
+        threading.Thread(target=self._icone_tray.run, daemon=True).start()
+
+    def _minimizar_para_tray(self) -> None:
+        self.withdraw()
+        if self._icone_tray:
+            self._icone_tray.icon = self._icone_imagem()
+
+    def _mostrar_janela(self, icon=None, item=None) -> None:
+        self.after(0, self._restaurar)
+
+    def _restaurar(self) -> None:
+        self.deiconify()
+        self.lift()
+        self.attributes("-topmost", True)
+        self.after(500, lambda: self.attributes("-topmost", False))
+
+    def _sair_do_tray(self, icon=None, item=None) -> None:
+        if self._icone_tray:
+            self._icone_tray.stop()
+        self.after(0, self.destroy)
 
 
 def main() -> None:
