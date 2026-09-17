@@ -29,8 +29,6 @@ import tkinter as tk
 from tkinter import messagebox
 import customtkinter as ctk
 
-ctk.set_appearance_mode("light")
-
 try:
     import pystray
     from PIL import Image, ImageDraw
@@ -47,41 +45,57 @@ MUTEX_NOME               = "FinaudPainelServicosLocais"
 PASTA_PAINEL             = Path(__file__).resolve().parent
 RAIZ_ATIVOS              = Path(r"D:\02_Finaud\Projetos\ativos")
 PASTA_LOGS               = PASTA_PAINEL / "logs"
+ARQUIVO_TEMA             = PASTA_PAINEL / "tema.txt"
 
-# ── Paleta ───────────────────────────────────────────────────────────────────
-BG_APP      = "#f5f7fc"
-BG_HEADER   = "#ebeef8"
-BG_LISTA    = "#ffffff"
-BORDA_LISTA = "#d0d4e8"
-BORDA_ROW   = "#e8eaf2"
-COR_TEXTO   = "#1a2040"
-COR_SUAVE   = "#7080a0"
+# Lê preferência salva (padrão: light)
+try:
+    _tema_salvo = ARQUIVO_TEMA.read_text().strip()
+    if _tema_salvo not in ("light", "dark"):
+        _tema_salvo = "light"
+except Exception:
+    _tema_salvo = "light"
+
+ctk.set_appearance_mode(_tema_salvo)
+
+
+def _cor_tk(cores: tuple[str, str]) -> str:
+    """Retorna a cor correta (claro/escuro) para widgets tk nativos."""
+    return cores[1] if ctk.get_appearance_mode().lower() == "dark" else cores[0]
+
+# ── Paleta  (claro, escuro) ───────────────────────────────────────────────────
+BG_APP      = ("#f5f7fc", "#090c18")
+BG_HEADER   = ("#ebeef8", "#07091a")
+BG_LISTA    = ("#ffffff", "#0d1122")
+BORDA_LISTA = ("#d0d4e8", "#1a1e3a")
+BORDA_ROW   = ("#e8eaf2", "#111828")   # tk.Frame — usar _cor_tk()
+COR_TEXTO   = ("#1a2040", "#ccd4ee")
+COR_SUAVE   = ("#7080a0", "#252a40")
 COR_LABEL   = "#3a5aff"
 
 _COR_DOT = {
-    "no_ar":      "#2e7d32",
-    "parcial":    "#e65100",
-    "ligando":    "#e65100",
-    "desligando": "#e65100",
-    "parado":     "#b71c1c",
+    "no_ar":      ("#2e7d32", "#2d9a50"),
+    "parcial":    ("#e65100", "#9a7020"),
+    "ligando":    ("#e65100", "#9a7020"),
+    "desligando": ("#e65100", "#9a7020"),
+    "parado":     ("#b71c1c", "#7a2020"),
 }
 _COR_NOME = {
     "no_ar":      COR_TEXTO,
-    "parcial":    "#7a4a10",
-    "ligando":    "#7a4a10",
-    "desligando": "#7a4a10",
-    "parado":     "#7a3030",
+    "parcial":    ("#7a4a10", "#a08050"),
+    "ligando":    ("#7a4a10", "#a08050"),
+    "desligando": ("#7a4a10", "#a08050"),
+    "parado":     ("#7a3030", "#7a5050"),
 }
 
 
-def _uptime_label(estado: str, uptime_str: str) -> tuple[str, str]:
+def _uptime_label(estado: str, uptime_str: str) -> tuple[str, tuple]:
     if estado == "no_ar":
-        return uptime_str, "#2e7d32"
+        return uptime_str, ("#2e7d32", "#4aaa70")
     if estado in ("ligando", "parcial"):
-        return "Ligando…", "#e65100"
+        return "Ligando…", ("#e65100", "#b09040")
     if estado == "desligando":
-        return "Saindo…", "#e65100"
-    return "Parado", "#c62828"
+        return "Saindo…", ("#e65100", "#b09040")
+    return "Parado", ("#c62828", "#a05050")
 
 
 # ── Backend ───────────────────────────────────────────────────────────────────
@@ -358,12 +372,13 @@ def _formatar_uptime(segundos: int) -> str:
 
 # ── UI ────────────────────────────────────────────────────────────────────────
 
-def _lnk(parent: ctk.CTkFrame, texto: str, url: str, cor: str = "#1565c0") -> None:
+def _lnk(parent: ctk.CTkFrame, texto: str, url: str,
+         cor: tuple = ("#1565c0", "#5a80c0")) -> None:
     lbl = ctk.CTkLabel(parent, text=texto, text_color=cor,
                         font=ctk.CTkFont("Segoe UI", 9), cursor="hand2")
     lbl.pack(side="left", padx=(0, 6))
     lbl.bind("<Button-1>", lambda _e: webbrowser.open(url))
-    lbl.bind("<Enter>", lambda _e: lbl.configure(text_color="#1976d2"))
+    lbl.bind("<Enter>", lambda _e: lbl.configure(text_color=("#1976d2", "#8ab0f0")))
     lbl.bind("<Leave>", lambda _e: lbl.configure(text_color=cor))
 
 
@@ -378,7 +393,8 @@ class LinhaServico(ctk.CTkFrame):
         self.ocupado = False
 
         # Linha separadora no fundo
-        tk.Frame(self, bg=BORDA_ROW, height=1).pack(side="bottom", fill="x")
+        self._sep_row = tk.Frame(self, bg=_cor_tk(BORDA_ROW), height=1)
+        self._sep_row.pack(side="bottom", fill="x")
 
         # Conteúdo interno
         inner = ctk.CTkFrame(self, fg_color="transparent")
@@ -388,7 +404,7 @@ class LinhaServico(ctk.CTkFrame):
         za = ctk.CTkFrame(inner, fg_color="transparent")
         za.pack(side="left", fill="x", expand=True)
 
-        self._dot = ctk.CTkLabel(za, text="●", text_color="#b71c1c",
+        self._dot = ctk.CTkLabel(za, text="●", text_color=("#b71c1c", "#7a2020"),
                                   font=ctk.CTkFont("Segoe UI", 8))
         self._dot.pack(side="left", padx=(0, 8))
 
@@ -398,14 +414,14 @@ class LinhaServico(ctk.CTkFrame):
                                        anchor="w")
         self._lbl_nome.pack(side="left")
 
-        ctk.CTkLabel(za, text=" · ", text_color="#b0b8d0",
+        ctk.CTkLabel(za, text=" · ", text_color=("#b0b8d0", "#3a4060"),
                      font=ctk.CTkFont("Segoe UI", 10)).pack(side="left")
 
-        ctk.CTkLabel(za, text=servico.detalhe, text_color="#5060a0",
+        ctk.CTkLabel(za, text=servico.detalhe, text_color=("#5060a0", "#5a6490"),
                      font=ctk.CTkFont("Consolas", 9), anchor="w").pack(side="left")
 
         # ── Zona B: uptime ──
-        self._lbl_uptime = ctk.CTkLabel(inner, text="", text_color="#2e7d32",
+        self._lbl_uptime = ctk.CTkLabel(inner, text="", text_color=("#2e7d32", "#4aaa70"),
                                          font=ctk.CTkFont("Segoe UI", 10),
                                          width=80, anchor="e")
         self._lbl_uptime.pack(side="left", padx=(6, 0))
@@ -416,24 +432,30 @@ class LinhaServico(ctk.CTkFrame):
 
         self._btn = ctk.CTkButton(
             zc, text="Ligar", width=80, height=26, corner_radius=4,
-            fg_color="#e8f5e9", text_color="#2e7d32", hover_color="#c8e6c9",
+            fg_color=("#e8f5e9", "#081808"), text_color=("#2e7d32", "#409060"),
+            hover_color=("#c8e6c9", "#0a2010"),
             border_width=0, font=ctk.CTkFont("Segoe UI", 9, weight="bold"),
             command=self._clique,
         )
         self._btn.pack(side="left")
 
-        tk.Frame(zc, bg="#c8cce0", width=1, height=14).pack(side="left", padx=8)
+        self._sep_ver = tk.Frame(zc, bg=_cor_tk(("#c8cce0", "#151a30")), width=1, height=14)
+        self._sep_ver.pack(side="left", padx=8)
 
         for rotulo, url in servico.abrir:
-            cor_lnk = "#1a7040" if rotulo == "API" else "#1565c0"
+            cor_lnk = ("#1a7040", "#4a9060") if rotulo == "API" else ("#1565c0", "#5a80c0")
             _lnk(zc, rotulo if rotulo == "API" else f"↗ {rotulo}", url, cor_lnk)
 
-        lbl_log = ctk.CTkLabel(zc, text="log", text_color="#9090b0",
+        lbl_log = ctk.CTkLabel(zc, text="log", text_color=("#9090b0", "#3a4468"),
                                  font=ctk.CTkFont("Segoe UI", 9), cursor="hand2")
         lbl_log.pack(side="left")
         lbl_log.bind("<Button-1>", lambda _e: self._abrir_log())
-        lbl_log.bind("<Enter>", lambda _e: lbl_log.configure(text_color="#3050c0"))
-        lbl_log.bind("<Leave>", lambda _e: lbl_log.configure(text_color="#9090b0"))
+        lbl_log.bind("<Enter>", lambda _e: lbl_log.configure(text_color=("#3050c0", "#7a88c0")))
+        lbl_log.bind("<Leave>", lambda _e: lbl_log.configure(text_color=("#9090b0", "#3a4468")))
+
+    def atualizar_tema(self) -> None:
+        self._sep_row.configure(bg=_cor_tk(BORDA_ROW))
+        self._sep_ver.configure(bg=_cor_tk(("#c8cce0", "#151a30")))
 
     def _clique(self) -> None:
         if self.ocupado:
@@ -455,16 +477,19 @@ class LinhaServico(ctk.CTkFrame):
         self._lbl_uptime.configure(text=txt_up, text_color=cor_up)
         if ocupado:
             self._btn.configure(state="disabled", text="Aguardar…",
-                                 fg_color="#f5f5e8", text_color="#909060",
-                                 hover_color="#f5f5e8")
+                                 fg_color=("#f5f5e8", "#181400"),
+                                 text_color=("#909060", "#504020"),
+                                 hover_color=("#f5f5e8", "#181400"))
         elif estado == "parado":
             self._btn.configure(state="normal", text="Ligar",
-                                 fg_color="#e8f5e9", text_color="#2e7d32",
-                                 hover_color="#c8e6c9")
+                                 fg_color=("#e8f5e9", "#081808"),
+                                 text_color=("#2e7d32", "#409060"),
+                                 hover_color=("#c8e6c9", "#0a2010"))
         else:
             self._btn.configure(state="normal", text="Desligar",
-                                 fg_color="#ffebee", text_color="#c62828",
-                                 hover_color="#ffcdd2")
+                                 fg_color=("#ffebee", "#200808"),
+                                 text_color=("#c62828", "#c05050"),
+                                 hover_color=("#ffcdd2", "#280a0a"))
 
 
 class Painel(ctk.CTk):
@@ -482,7 +507,6 @@ class Painel(ctk.CTk):
 
         self.title(TITULO)
         self.configure(fg_color=BG_APP)
-        self.resizable(False, True)
         self.minsize(520, 540)
         self._montar()
         self._posicionar()
@@ -509,7 +533,7 @@ class Painel(ctk.CTk):
         # Título (esquerda)
         left = ctk.CTkFrame(hd_inner, fg_color="transparent")
         left.pack(side="left", fill="y")
-        ctk.CTkLabel(left, text="Finaud", text_color="#8090b0",
+        ctk.CTkLabel(left, text="Finaud", text_color=("#8090b0", "#505880"),
                      font=ctk.CTkFont("Segoe UI", 9), anchor="w").pack(anchor="w", pady=(10, 0))
         ctk.CTkLabel(left, text="Serviços locais", text_color=COR_TEXTO,
                      font=ctk.CTkFont("Segoe UI", 14, weight="bold"), anchor="w").pack(anchor="w")
@@ -521,25 +545,37 @@ class Painel(ctk.CTk):
         ctk.CTkButton(
             right, text="Ligar todos", command=self._ligar_todos,
             width=95, height=28, corner_radius=5, border_width=1,
-            fg_color="#e8f5e9", text_color="#2e7d32", hover_color="#c8e6c9",
-            border_color="#a5d6a7", font=ctk.CTkFont("Segoe UI", 9),
+            fg_color=("#e8f5e9", "#0d2218"), text_color=("#2e7d32", "#4caf50"),
+            hover_color=("#c8e6c9", "#102a1e"), border_color=("#a5d6a7", "#1a4a28"),
+            font=ctk.CTkFont("Segoe UI", 9),
         ).pack(side="left", padx=(0, 6), pady=14)
 
         ctk.CTkButton(
             right, text="Desligar todos", command=self._desligar_todos,
             width=105, height=28, corner_radius=5, border_width=1,
-            fg_color="#ffebee", text_color="#c62828", hover_color="#ffcdd2",
-            border_color="#ef9a9a", font=ctk.CTkFont("Segoe UI", 9),
+            fg_color=("#ffebee", "#1e0a0a"), text_color=("#c62828", "#ef5350"),
+            hover_color=("#ffcdd2", "#260c0c"), border_color=("#ef9a9a", "#4a1010"),
+            font=ctk.CTkFont("Segoe UI", 9),
         ).pack(side="left", padx=(0, 6))
 
         if TRAY_DISPONIVEL:
             ctk.CTkButton(
                 right, text="↙ Bandeja", command=self._minimizar_para_tray,
                 width=80, height=28, corner_radius=5, border_width=1,
-                fg_color="transparent", text_color="#5060a0",
-                border_color="#c0c8e0", hover_color="#e8eaf2",
+                fg_color="transparent", text_color=("#5060a0", "#3a4070"),
+                border_color=("#c0c8e0", "#1a1e3a"), hover_color=("#e8eaf2", "#0d1020"),
                 font=ctk.CTkFont("Segoe UI", 9),
-            ).pack(side="left")
+            ).pack(side="left", padx=(0, 6))
+
+        icone_tema = "🌙" if ctk.get_appearance_mode().lower() == "light" else "☀"
+        self._btn_tema = ctk.CTkButton(
+            right, text=icone_tema, command=self._alternar_tema,
+            width=34, height=28, corner_radius=5, border_width=1,
+            fg_color="transparent", text_color=("#5060a0", "#3a4070"),
+            border_color=("#c0c8e0", "#1a1e3a"), hover_color=("#e8eaf2", "#0d1020"),
+            font=ctk.CTkFont("Segoe UI", 13),
+        )
+        self._btn_tema.pack(side="left")
 
         # Título da página
         ph = ctk.CTkFrame(self, fg_color="transparent")
@@ -557,8 +593,8 @@ class Painel(ctk.CTk):
         lista = ctk.CTkScrollableFrame(
             self, fg_color=BG_LISTA, corner_radius=8,
             border_width=1, border_color=BORDA_LISTA,
-            scrollbar_button_color="#c0c8e0",
-            scrollbar_button_hover_color="#9095b5",
+            scrollbar_button_color=("#c0c8e0", "#1a1e3a"),
+            scrollbar_button_hover_color=("#9095b5", "#252a4a"),
         )
         lista.pack(fill="both", expand=True, padx=20, pady=(0, 14))
 
@@ -569,6 +605,18 @@ class Painel(ctk.CTk):
                 self._estado_cache,
             )
             self.linhas[servico.id] = linha
+
+    def _alternar_tema(self) -> None:
+        atual = ctk.get_appearance_mode().lower()
+        novo = "dark" if atual == "light" else "light"
+        ctk.set_appearance_mode(novo)
+        for linha in self.linhas.values():
+            linha.atualizar_tema()
+        self._btn_tema.configure(text="☀" if novo == "dark" else "🌙")
+        try:
+            ARQUIVO_TEMA.write_text(novo)
+        except Exception:
+            pass
 
     def _posicionar(self) -> None:
         # Passo 1: aplicar tamanho e colocar fora da tela temporariamente.
