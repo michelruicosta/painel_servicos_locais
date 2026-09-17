@@ -315,8 +315,15 @@ def arquivo_log(servico_id: str, chave: str) -> Path:
 
 
 def iniciar_processo(servico_id: str, proc: Processo) -> None:
+    # Se a porta está ocupada (conflito externo), mata o processo e aguarda liberação
     if porta_aberta(proc.porta):
-        return
+        matar_porta(proc.porta)
+        for _ in range(15):          # até 3 s
+            if not porta_aberta(proc.porta):
+                break
+            time.sleep(0.2)
+        if porta_aberta(proc.porta): # não liberou — presume que está rodando
+            return
     if not proc.cwd.is_dir():
         raise FileNotFoundError(f"Pasta não encontrada: {proc.cwd}")
     _SEM_PATH = {"npm", "npm.cmd", "ssh"}
@@ -349,6 +356,12 @@ def ligar_servico(servico: Servico) -> str | None:
 def desligar_servico(servico: Servico) -> None:
     for proc in reversed(servico.processos):
         matar_porta(proc.porta)
+    # Aguarda todas as portas serem liberadas pelo OS (até 5 s)
+    prazo = time.time() + 5.0
+    while time.time() < prazo:
+        if not any(porta_aberta(p.porta) for p in servico.processos):
+            break
+        time.sleep(0.3)
 
 
 def ja_existe_outra_janela() -> bool:
